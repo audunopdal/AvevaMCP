@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "aveva-unified-engineering": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--no-build",
+        "--project",
+        "${workspaceFolder}/src/AvevaMcp.Server/AvevaMcp.Server.csproj"
+      ]
+    }
+  }
+}
