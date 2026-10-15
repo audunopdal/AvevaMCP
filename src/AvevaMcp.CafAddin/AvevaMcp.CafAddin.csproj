@@ -25,14 +25,30 @@
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <Reference Include="Aveva.ApplicationFramework" />
-    <Reference Include="Aveva.Core.Database" />
-    <Reference Include="Aveva.Core.Geometry" />
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.IO.Pipes" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="Newtonsoft.Json" />
+    <Reference Include="Aveva.ApplicationFramework">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.Core.Database">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.Core.Geometry">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Core">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.IO.Pipes">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System.Windows.Forms">
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <Private>False</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="McpBridgeAddin.cs" />

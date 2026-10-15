@@ -25,6 +25,8 @@ dotnet build .\src\AvevaMcp.CafAddin\AvevaMcp.CafAddin.csproj /p:Configuration=R
 
 Set `UNIFIED_ENGINEERING_REFERENCE_PATH` to the UE 4.1 SDK directory. AVEVA's customization environment also sets `CAF_ADDINS_PATH`; if defined, the build copies the add-in there. Register `AvevaMcp.CafAddin` in the UE 4.1 module's add-in configuration using the same deployment procedure as other local CAF add-ins, then restart UE.
 
+The CAF add-in disables Copy Local for installed AVEVA, framework, and Newtonsoft.Json assembly references; UE supplies these at runtime. The standalone MCP server still copies its NuGet runtime dependencies.
+
 ## Configure the MCP client
 
 The included `.vscode/mcp.json` configures VS Code to run the server. Open this repository as the workspace, build the server, and enable the `aveva-unified-engineering` server in VS Code's MCP configuration.
