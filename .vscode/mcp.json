@@ -12,3 +12,14 @@
     }
   }
 }
+{
+  "servers": {
+    "revit": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "D:\\Repos\\RevitMCP\\artifacts\\server\\RevitMCP.Server.dll"
+      ]
+    }
+  }
+}
