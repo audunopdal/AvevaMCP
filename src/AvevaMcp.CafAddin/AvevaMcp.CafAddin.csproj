@@ -2,6 +2,7 @@
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
   <Import Condition="Exists('$(VIEW_ROOT)')" Project="$(VIEW_ROOT)\Build\AVEVA_msbuild.props" />
   <PropertyGroup>
+    <UNIFIED_ENGINEERING_REFERENCE_PATH Condition="'$(UNIFIED_ENGINEERING_REFERENCE_PATH)' == ''">$(PUBLIC)\Documents\AVEVA\Unpack\AVEVA.UnifiedEngineering\4100.2606.2414.5053</UNIFIED_ENGINEERING_REFERENCE_PATH>
     <ReferencePath>$(UNIFIED_ENGINEERING_REFERENCE_PATH)</ReferencePath>
     <TargetFrameworkProfile />
     <ProjectGuid>{AA92C41E-8006-4508-BEA8-FA6446F1D7C1}</ProjectGuid>
@@ -14,13 +15,15 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <OutputType>Library</OutputType>
     <RootNamespace>AvevaMcp.CafAddin</RootNamespace>
-    <AssemblyName>AvevaMcp.CafAddin</AssemblyName>
-    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <AssemblyName>AvevaMcp.AvevaMcpAddin</AssemblyName>
+    <TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>
+    <RuntimeIdentifiers>win</RuntimeIdentifiers>
     <LangVersion>7.3</LangVersion>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
+    <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
@@ -28,13 +31,19 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <Reference Include="Aveva.ApplicationFramework">
-      <HintPath>C:\Users\Public\Documents\AVEVA\Unpack\AVEVA.UnifiedEngineering\4100.2606.2414.5053\Aveva.ApplicationFramework.dll</HintPath>
+      <HintPath>$(UNIFIED_ENGINEERING_REFERENCE_PATH)\Aveva.ApplicationFramework.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Aveva.Core.Database">
-      <HintPath>C:\Users\Public\Documents\AVEVA\Unpack\AVEVA.UnifiedEngineering\4100.2606.2414.5053\Aveva.Core.Database.dll</HintPath>
+      <HintPath>$(UNIFIED_ENGINEERING_REFERENCE_PATH)\Aveva.Core.Database.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Aveva.Core.Geometry">
-      <HintPath>C:\Users\Public\Documents\AVEVA\Unpack\AVEVA.UnifiedEngineering\4100.2606.2414.5053\Aveva.Core.Geometry.dll</HintPath>
+      <HintPath>$(UNIFIED_ENGINEERING_REFERENCE_PATH)\Aveva.Core.Geometry.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.VisualBasic">
+      <Private>False</Private>
     </Reference>
     <Reference Include="System">
       <Private>False</Private>
@@ -49,6 +58,7 @@
       <Private>False</Private>
     </Reference>
     <Reference Include="Newtonsoft.Json">
+      <HintPath>$(UNIFIED_ENGINEERING_REFERENCE_PATH)\Newtonsoft.Json.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>

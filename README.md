@@ -10,11 +10,26 @@ An MCP stdio server that exposes AVEVA Unified Engineering engineering data thro
 
 ## Build
 
+Build both projects using the PowerShell scripts at the repository root:
+
+```powershell
+.\build-debug.ps1
+.\build-release.ps1
+```
+
+Add `-Rebuild` to force recompilation, for example `.\build-debug.ps1 -Rebuild`.
+Both scripts locate the solution relative to the script, so they also work when invoked from another directory. They restore dependencies as needed and return the build's exit code.
+Release builds select Release for both projects and enable optimization for the CAF add-in.
+
+Stop the MCP server before building if it locks its executable. The scripts do not stop processes or restart the server. The existing add-in post-build copy still runs when `CAF_ADDINS_PATH` is set; unset it for a build without deployment, or close UE before replacing a loaded add-in.
+
 Open `AvevaMcp.sln` in Visual Studio to work with both projects. From a UE customization environment with the AVEVA reference assemblies configured, build the entire solution with:
 
 ```powershell
 dotnet build .\AvevaMcp.sln
 ```
+
+When `UNIFIED_ENGINEERING_REFERENCE_PATH` is unset, the CAF add-in uses `%PUBLIC%\Documents\AVEVA\Unpack\AVEVA.UnifiedEngineering\4100.2606.2414.5053` for its AVEVA and Newtonsoft.Json references. This lets Visual Studio resolve references without being launched from a customization shell when that SDK version is installed. For another SDK location, set `UNIFIED_ENGINEERING_REFERENCE_PATH` before starting Visual Studio. Reload the project after changing its reference configuration.
 
 The projects can also be built individually:
 
@@ -34,6 +49,8 @@ dotnet build .\src\AvevaMcp.CafAddin\AvevaMcp.CafAddin.csproj /p:Configuration=R
 Set `UNIFIED_ENGINEERING_REFERENCE_PATH` to the UE 4.1 SDK directory. AVEVA's customization environment also sets `CAF_ADDINS_PATH`; if defined, the build copies the add-in there. Register `AvevaMcp.CafAddin` in the UE 4.1 module's add-in configuration using the same deployment procedure as other local CAF add-ins, then restart UE.
 
 The CAF add-in disables Copy Local for installed AVEVA, framework, and Newtonsoft.Json assembly references; UE supplies these at runtime. The standalone MCP server still copies its NuGet runtime dependencies.
+
+The CAF add-in declares the `win` runtime identifier so command-line restore also produces the Windows assets expected by Visual Studio's legacy .NET Framework project system. After changing runtime identifiers, run `dotnet restore .\AvevaMcp.sln` and reload the project.
 
 ## Configure the MCP client
 
