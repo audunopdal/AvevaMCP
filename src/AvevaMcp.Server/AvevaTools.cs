@@ -6,24 +6,33 @@ namespace AvevaMcp.Server;
 [McpServerToolType]
 public static class AvevaTools
 {
-    [McpServerTool, Description("Return the active UE project, user, and MDB. Requires a running UE session with the CAF add-in loaded.")]
+    [McpServerTool(ReadOnly = true), 
+     Description("Return the active UE project, user, and MDB. Requires a running UE session with the CAF add-in loaded.")]
     public static Task<string> get_context(CancellationToken cancellationToken = default) =>
         BridgeClient.CallAsync("get_context", new { }, cancellationToken);
 
-    [McpServerTool, Description("Get the full name and element type for an AVEVA element path.")]
+    [McpServerTool(ReadOnly = true), 
+      Description("List all SITE elements under WORLD (/*) in the active MDB. Returns each site's path and type without a result limit.")]
+    public static Task<string> list_sites(CancellationToken cancellationToken = default) =>
+        BridgeClient.CallAsync("list_sites", new { }, cancellationToken);
+
+    [McpServerTool(ReadOnly = true), 
+     Description("Get the full name and element type for an AVEVA element path.")]
     public static Task<string> get_element(
         [Description("Full AVEVA element path, for example /* or /SITE/ZONE/EQUIPMENT.")] string path,
         CancellationToken cancellationToken = default) =>
         BridgeClient.CallAsync("get_element", new { path }, cancellationToken);
 
-    [McpServerTool, Description("List direct children of an AVEVA element. The maximum page size is 500.")]
+    [McpServerTool(ReadOnly = true), 
+     Description("List direct children of an AVEVA element. The maximum page size is 500.")]
     public static Task<string> list_children(
         [Description("Full AVEVA parent element path.")] string path,
         [Description("Maximum number of children to return (1-500).")] int limit = 100,
         CancellationToken cancellationToken = default) =>
         BridgeClient.CallAsync("list_children", new { path, limit }, cancellationToken);
 
-    [McpServerTool, Description("Search element names below a root element path. Results are capped at 500.")]
+    [McpServerTool(ReadOnly = true), 
+     Description("Search element names below a root element path. Results are capped at 500.")]
     public static Task<string> search_elements(
         [Description("Full AVEVA root path to search below.")] string rootPath,
         [Description("Case-insensitive text to match in element names.")] string nameContains,
@@ -31,7 +40,8 @@ public static class AvevaTools
         CancellationToken cancellationToken = default) =>
         BridgeClient.CallAsync("search_elements", new { rootPath, nameContains, limit }, cancellationToken);
 
-    [McpServerTool, Description("Read a string, integer, double, or boolean AVEVA attribute.")]
+    [McpServerTool(ReadOnly = true), 
+     Description("Read a string, integer, double, or boolean AVEVA attribute.")]
     public static Task<string> read_attribute(
         [Description("Full AVEVA element path.")] string path,
         [Description("Attribute name such as DESC, REV, PRES, or BUIL.")] string attribute,

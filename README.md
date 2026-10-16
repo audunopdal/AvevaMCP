@@ -17,11 +17,15 @@ Build both projects using the PowerShell scripts at the repository root:
 .\build-release.ps1
 ```
 
+In VS Code, press **Ctrl+Shift+B** to build Debug and copy the add-in using `build-debug.ps1`. For Release, run **Tasks: Run Task** from the Command Palette and select **build-release**. F5 retains its server-only build and does not deploy the add-in.
+
 Add `-Rebuild` to force recompilation, for example `.\build-debug.ps1 -Rebuild`.
-Both scripts locate the solution relative to the script, so they also work when invoked from another directory. They restore dependencies as needed and return the build's exit code.
+Both scripts locate the solution relative to the script, so they also work when invoked from another directory. They restore dependencies as needed and return the build's exit code on build failure.
 Release builds select Release for both projects and enable optimization for the CAF add-in.
 
-Stop the MCP server before building if it locks its executable. The scripts do not stop processes or restart the server. The existing add-in post-build copy still runs when `CAF_ADDINS_PATH` is set; unset it for a build without deployment, or close UE before replacing a loaded add-in.
+Only after the entire solution builds successfully, each script copies `AvevaMcp.AvevaMcpAddin.dll` and `AvevaMcp.AvevaMcpAddin.pdb` from its configuration's output directory to `D:\MyUE\addins`, creating the directory if needed. Copy errors fail the script. The scripts disable project post-build events so `CAF_ADDINS_PATH` cannot trigger an earlier copy before the solution finishes building. Direct builds in Visual Studio or with `dotnet build` retain the existing post-build behavior.
+
+Stop the MCP server before building if it locks its executable, and close UE before replacing a loaded add-in. The scripts do not stop processes or restart the server.
 
 Open `AvevaMcp.sln` in Visual Studio to work with both projects. From a UE customization environment with the AVEVA reference assemblies configured, build the entire solution with:
 
@@ -63,6 +67,7 @@ The server only connects to the named pipe when a tool is called. Start UE and l
 | Tool | Purpose |
 | --- | --- |
 | `get_context` | Get the current project, user, and MDB names. |
+| `list_sites` | List all SITE elements under WORLD (`/*`) in the active MDB, returning paths and types without a result cap. |
 | `get_element` | Read an element's path and type. |
 | `list_children` | List direct children of an element (maximum 500). |
 | `search_elements` | Search descendant element names below a path (maximum 500 results). |

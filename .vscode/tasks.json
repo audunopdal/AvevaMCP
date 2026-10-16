@@ -3,6 +3,33 @@
     "tasks": [
         {
             "label": "build",
+            "command": "powershell.exe",
+            "type": "process",
+            "args": [
+                "-NoProfile",
+                "-File",
+                "${workspaceFolder}\\build-debug.ps1"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-release",
+            "command": "powershell.exe",
+            "type": "process",
+            "args": [
+                "-NoProfile",
+                "-File",
+                "${workspaceFolder}\\build-release.ps1"
+            ],
+            "group": "build",
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-server",
             "command": "dotnet",
             "type": "process",
             "args": [

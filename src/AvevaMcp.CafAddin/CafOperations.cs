@@ -16,6 +16,8 @@ namespace AvevaMcp.CafAddin
             {
                 case "get_context":
                     return GetContext();
+                case "list_sites":
+                    return ListSites();
                 case "get_element":
                     return DescribeElement(GetElement(RequiredString(parameters, "path")));
                 case "list_children":
@@ -73,6 +75,20 @@ namespace AvevaMcp.CafAddin
                 ["path"] = element.GetString(DbAttributeInstance.NAME),
                 ["type"] = element.GetElementType().ToString()
             };
+        }
+
+        private static JArray ListSites()
+        {
+            var results = new JArray();
+            foreach (DbElement element in GetElement("/*").Members())
+            {
+                if (element.GetElementType().Equals(DbElementTypeInstance.SITE))
+                {
+                    results.Add(DescribeElement(element));
+                }
+            }
+
+            return results;
         }
 
         private static JArray ListChildren(DbElement parent, int limit)
