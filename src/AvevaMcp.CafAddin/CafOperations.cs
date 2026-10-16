@@ -58,6 +58,10 @@ namespace AvevaMcp.CafAddin
                         RequiredDouble(parameters, "width"),
                         RequiredDouble(parameters, "height"),
                         OptionalBoolean(parameters, "updateExisting"));
+                case "create_primitive":
+                    return CreatePrimitive(parameters);
+                case "get_primitive_geometry":
+                    return DescribePrimitive(GetElement(RequiredString(parameters, "path")));
                 case "delete_element":
                     return DeleteElement(
                         RequiredString(parameters, "path"),
@@ -172,8 +176,26 @@ namespace AvevaMcp.CafAddin
                 case "boolean":
                     value = new JValue(element.GetBool(attribute));
                     break;
+                case "position":
+                {
+                    Position position = element.GetPosition(attribute);
+                    value = new JObject { ["x"] = position.X, ["y"] = position.Y, ["z"] = position.Z };
+                    break;
+                }
+                case "orientation":
+                {
+                    Orientation orientation = element.GetOrientation(attribute);
+                    value = new JObject
+                    {
+                        ["axisX"] = DescribeDirection(orientation.XDir()),
+                        ["axisY"] = DescribeDirection(orientation.YDir()),
+                        ["axisZ"] = DescribeDirection(orientation.ZDir())
+                    };
+                    break;
+                }
                 default:
-                    throw new ArgumentException("Unsupported valueType. Use string, integer, double, or boolean.");
+                    throw new ArgumentException(
+                        "Unsupported read valueType. Use string, integer, double, boolean, position, or orientation.");
             }
 
             return new JObject
@@ -458,6 +480,187 @@ namespace AvevaMcp.CafAddin
                     new JObject { ["x"] = 0, ["y"] = width }
                 }
             };
+        }
+
+        private static JObject CreatePrimitive(JObject parameters)
+        {
+            string parentPath = RequiredString(parameters, "parentPath");
+            string name = RequiredString(parameters, "name");
+            string typeName = RequiredString(parameters, "elementType").Trim().ToUpperInvariant();
+            if (typeName != "BOX" && typeName != "NBOX" && typeName != "CYLINDER" && typeName != "CTORUS")
+            {
+                throw new ArgumentException("Supported primitive types: BOX, NBOX, CYLINDER, CTORUS.");
+            }
+
+            if (!name.StartsWith("/", StringComparison.Ordinal) || name.Length < 2)
+            {
+                throw new ArgumentException("name must be a full AVEVA element name beginning with /.");
+            }
+
+            double x = RequiredDouble(parameters, "x");
+            double y = RequiredDouble(parameters, "y");
+            double z = RequiredDouble(parameters, "z");
+            bool torus = typeName == "CTORUS";
+            string[] dimensionNames = torus
+                ? new[] { "insideRadius", "outsideRadius", "sweepAngle" }
+                : new[] { "xLength", "yLength", "zLength" };
+            string[] unusedNames = torus
+                ? new[] { "xLength", "yLength", "zLength" }
+                : new[] { "insideRadius", "outsideRadius", "sweepAngle" };
+            foreach (string unused in unusedNames)
+            {
+                if (parameters[unused] != null && parameters[unused].Type != JTokenType.Null)
+                {
+                    throw new ArgumentException(unused + " is not applicable to " + typeName);
+                }
+            }
+
+            double first = RequiredDouble(parameters, dimensionNames[0]);
+            double second = RequiredDouble(parameters, dimensionNames[1]);
+            double third = RequiredDouble(parameters, dimensionNames[2]);
+            if (first <= 0 || second <= 0 || third <= 0)
+            {
+                throw new ArgumentException("All primitive dimensions must be greater than zero.");
+            }
+
+            if (torus && (second <= first || third > 360))
+            {
+                throw new ArgumentException(
+                    "CTORUS requires outsideRadius > insideRadius > 0 and 0 < sweepAngle <= 360 degrees.");
+            }
+
+            if (typeName == "CYLINDER" && Math.Abs(first - second) > 1e-6)
+            {
+                throw new ArgumentException("CYLINDER xLength and yLength must both equal its diameter.");
+            }
+
+            double[] axisX = ReadUnitAxis(parameters, "axisX", new[] { 1.0, 0.0, 0.0 });
+            double[] axisY = ReadUnitAxis(parameters, "axisY", new[] { 0.0, 1.0, 0.0 });
+            double dot = axisX[0] * axisY[0] + axisX[1] * axisY[1] + axisX[2] * axisY[2];
+            if (Math.Abs(dot) > 1e-6)
+            {
+                throw new ArgumentException("Local X and Y axes must be perpendicular.");
+            }
+
+            DbElement parent = GetElement(parentPath);
+            if (DbElement.GetElement(name).IsValid)
+            {
+                throw new InvalidOperationException("An element already exists at " + name);
+            }
+
+            Position position = Position.Create(x, y, z);
+            Orientation orientation = Orientation.Create(
+                Axis.X, Direction.Create(Position.Create(axisX[0], axisX[1], axisX[2])),
+                Axis.Y, Direction.Create(Position.Create(axisY[0], axisY[1], axisY[2])));
+            DbElementType type = DbElementType.GetElementType(typeName);
+            if (type == null)
+            {
+                throw new ArgumentException("Unknown AVEVA primitive type: " + typeName);
+            }
+
+            DbElement created = parent.CreateLast(type);
+            try
+            {
+                created.SetAttribute(DbAttributeInstance.NAME, name);
+                created.SetAttribute(DbAttributeInstance.POS, position);
+                created.SetAttribute(DbAttributeInstance.ORI, orientation);
+                if (torus)
+                {
+                    created.SetAttribute(GetAttribute("RINS"), first);
+                    created.SetAttribute(GetAttribute("ROUT"), second);
+                    created.SetAttribute(GetAttribute("ANGL"), third);
+                }
+                else if (typeName == "CYLINDER")
+                {
+                    created.SetAttribute(GetAttribute("DIAM"), first);
+                    created.SetAttribute(DbAttributeInstance.HEIG, third);
+                }
+                else
+                {
+                    created.SetAttribute(GetAttribute("XLEN"), first);
+                    created.SetAttribute(GetAttribute("YLEN"), second);
+                    created.SetAttribute(GetAttribute("ZLEN"), third);
+                }
+
+                return DescribePrimitive(created);
+            }
+            catch (Exception operationError)
+            {
+                try
+                {
+                    created.Delete();
+                }
+                catch (Exception rollbackError)
+                {
+                    throw new AggregateException(
+                        "Primitive setup failed and cleanup was incomplete; inspect unsaved work at " + name,
+                        operationError, rollbackError);
+                }
+
+                throw;
+            }
+        }
+
+        private static double[] ReadUnitAxis(JObject parameters, string prefix, double[] defaults)
+        {
+            var axis = new double[3];
+            string[] suffixes = { "X", "Y", "Z" };
+            double squaredLength = 0;
+            for (int index = 0; index < axis.Length; index++)
+            {
+                string key = prefix + suffixes[index];
+                axis[index] = parameters[key] == null ? defaults[index] : RequiredDouble(parameters, key);
+                squaredLength += axis[index] * axis[index];
+            }
+
+            if (Math.Abs(squaredLength - 1) > 1e-6 || double.IsInfinity(squaredLength))
+            {
+                throw new ArgumentException(prefix + " must be a unit direction vector.");
+            }
+
+            return axis;
+        }
+
+        private static JObject DescribePrimitive(DbElement element)
+        {
+            string type = element.GetElementType().ToString();
+            if (type != "BOX" && type != "NBOX" && type != "CYLINDER" && type != "CTORUS")
+            {
+                throw new ArgumentException("Geometry read-back supports BOX, NBOX, CYLINDER, and CTORUS only.");
+            }
+
+            Position position = element.GetPosition(DbAttributeInstance.POS);
+            Orientation orientation = element.GetOrientation(DbAttributeInstance.ORI);
+            bool cylinder = type == "CYLINDER";
+            var result = new JObject
+            {
+                ["path"] = element.GetString(DbAttributeInstance.NAME),
+                ["type"] = type,
+                ["coordinateSystem"] = "owner",
+                ["position"] = new JObject { ["x"] = position.X, ["y"] = position.Y, ["z"] = position.Z },
+                ["axisX"] = DescribeDirection(orientation.XDir()),
+                ["axisY"] = DescribeDirection(orientation.YDir()),
+                ["axisZ"] = DescribeDirection(orientation.ZDir())
+            };
+            if (type == "CTORUS")
+            {
+                result["insideRadius"] = element.GetDouble(GetAttribute("RINS"));
+                result["outsideRadius"] = element.GetDouble(GetAttribute("ROUT"));
+                result["sweepAngle"] = element.GetDouble(GetAttribute("ANGL"));
+            }
+            else
+            {
+                result["xLength"] = element.GetDouble(GetAttribute(cylinder ? "DIAM" : "XLEN"));
+                result["yLength"] = element.GetDouble(GetAttribute(cylinder ? "DIAM" : "YLEN"));
+                result["zLength"] = element.GetDouble(GetAttribute(cylinder ? "HEIG" : "ZLEN"));
+            }
+
+            return result;
+        }
+
+        private static JObject DescribeDirection(Direction direction)
+        {
+            return new JObject { ["x"] = direction.East, ["y"] = direction.North, ["z"] = direction.Up };
         }
 
         private static JObject DeleteElement(string path, string confirmPath)

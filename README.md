@@ -71,21 +71,61 @@ The server only connects to the named pipe when a tool is called. Start UE and l
 | `get_element` | Read an element's path and type. |
 | `list_children` | List direct children of an element (maximum 500). |
 | `search_elements` | Search descendant element names below a path (maximum 500 results). |
-| `read_attribute` | Read a string, integer, double, or boolean attribute. |
+| `read_attribute` | Read a scalar attribute, or use `position` for POS (x/y/z) and `orientation` for ORI (axisX/axisY/axisZ vectors), in owner coordinates. |
 | `set_attribute` | Set a string, integer, double, or boolean attribute. |
 | `create_element` | Create an element under a parent and assign its full AVEVA name. |
 | `create_rectangular_extrusion` | Build a length-by-width XY profile and extrude vertically, with `HEIG` equal to wall Z-height. Set `updateExisting=true` to update an existing four-vertex LOOP. |
+| `create_primitive` | Create a positioned and oriented BOX, NBOX, CYLINDER, or CTORUS, returning actual geometry read-back. |
+| `get_primitive_geometry` | Read a primitive's centre, local axes, and dimensions in owner coordinates. |
 | `delete_element` | Delete an element only when `confirmPath` exactly matches its path. |
 | `save_work` | Explicitly save current MDB work with a comment. |
 | `discard_work` | Explicitly discard current MDB work; requires `DISCARD_CURRENT_WORK`. |
 
 Changes are not automatically saved. Review edits in UE and call `save_work` explicitly. `discard_work` discards all unsaved changes in the current MDB, not only changes made through MCP.
 
+### Placing door primitives
+
+`create_primitive` takes `parentPath`, a unique full `name`, `elementType`, centre coordinates
+`x`, `y`, `z`, and positive `xLength`, `yLength`, `zLength` for boxes/cylinders. For a CYLINDER,
+`xLength` and `yLength` both specify diameter and `zLength` specifies its axial height.
+For BOX and NBOX these are local X/Y/Z dimensions. Optional `axisXX`, `axisXY`,
+`axisXZ` and `axisYX`, `axisYY`, `axisYZ` specify orthogonal unit local X/Y axes
+in owner coordinates; defaults are the owner's X and Y axes. Local Z follows
+the right-hand rule. All lengths use the AVEVA project length unit.
+
+Create the door STRU with `create_element`, then create the leaf BOX, simplified
+frame BOXes, and hardware CYLINDERs beneath it. Existing rectangular extrusion
+tools can instead create the frame members as EXTRUSIONs. Use CTORUS bends
+for curved handle segments when the bend dimensions are known.
+
+For CTORUS, omit `xLength`, `yLength`, `zLength` and supply `insideRadius`,
+`outsideRadius`, and `sweepAngle` in degrees. Both radii are measured from the
+arc centre to the tube's inner/outer surfaces, with
+`outsideRadius > insideRadius > 0` and `0 < sweepAngle <= 360`.
+The position is the arc centre, and the arc lies in local XY. The tube diameter
+is `outsideRadius - insideRadius`; its centreline radius is their average.
+For example, a 20 mm diameter tube bent on a 30 mm centreline radius uses
+`insideRadius=20`, `outsideRadius=40`, `sweepAngle=90` for a quarter bend.
+This example is not an inferred dimension of the Revit door handle.
+
+Use Revit component-local bounds to calculate the centre and dimensions, and
+transform the centre and axes into the AVEVA owner's coordinates. Shared Revit
+coordinates cannot be passed unchanged if the AVEVA owner is translated or
+rotated. Check units and coordinate alignment first. Put the opening NBOX beneath
+the host wall's positive EXTRUSION, not beneath the door STRU, and convert its
+placement into that extrusion's local coordinates. Its depth must span the wall.
+
+The tool refuses existing names and invalid dimensions or axes before creating
+anything. On a setup or read-back failure it deletes only the newly created
+primitive; cleanup failures are reported explicitly. Use `get_primitive_geometry`
+to verify placement and dimensions before saving. After deploying updated
+binaries, restart UE and the MCP server to expose the new operations.
+
 ## Limitations
 
 - A compatible UE session with the add-in loaded is required; the pipe is not a REST service and does not work when UE is closed.
 - CAF operations are performed on UE's application synchronization context. Calls fail clearly if the add-in cannot capture that context.
-- General geometry, references, rules, transactions, and other CAF attribute types are not exposed. `create_rectangular_extrusion` supports vertical rectangular walls with a horizontal baseline in the owner's coordinates. The profile is length by thickness in local XY; local Z points up in the owner's coordinates, and `HEIG` is the wall height, not its baseline length. Coordinates and dimensions must already be converted to the AVEVA project length unit. Existing geometry is refused unless `updateExisting=true`, and updates require exactly one four-vertex LOOP. Failed writes attempt to restore the previous geometry and report rollback failures explicitly. Openings, curved walls, and sloping walls are not supported.
+- General geometry, references, rules, transactions, and other CAF attribute types are not exposed. `create_rectangular_extrusion` supports vertical rectangular walls with a horizontal baseline in the owner's coordinates. The profile is length by thickness in local XY; local Z points up in the owner's coordinates, and `HEIG` is the wall height, not its baseline length. Coordinates and dimensions must already be converted to the AVEVA project length unit. Existing geometry is refused unless `updateExisting=true`, and updates require exactly one four-vertex LOOP. Failed writes attempt to restore the previous geometry and report rollback failures explicitly. The extrusion operation does not create openings, curved walls, or sloping walls; a separate NBOX can represent a rectangular opening.
 - No operation silently substitutes a mock result when UE is unavailable.
 
 ## References

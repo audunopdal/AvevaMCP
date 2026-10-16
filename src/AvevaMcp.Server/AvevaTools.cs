@@ -41,11 +41,11 @@ public static class AvevaTools
         BridgeClient.CallAsync("search_elements", new { rootPath, nameContains, limit }, cancellationToken);
 
     [McpServerTool(ReadOnly = true), 
-     Description("Read a string, integer, double, or boolean AVEVA attribute.")]
+     Description("Read an AVEVA scalar, position, or orientation attribute. Position returns x/y/z; orientation returns axisX/axisY/axisZ vectors. Geometry values use owner coordinates.")]
     public static Task<string> read_attribute(
         [Description("Full AVEVA element path.")] string path,
         [Description("Attribute name such as DESC, REV, PRES, or BUIL.")] string attribute,
-        [Description("One of: string, integer, double, boolean.")] string valueType,
+        [Description("One of: string, integer, double, boolean, position, orientation. For geometry use POS/position or ORI/orientation.")] string valueType,
         CancellationToken cancellationToken = default) =>
         BridgeClient.CallAsync("read_attribute", new { path, attribute, valueType }, cancellationToken);
 
@@ -83,6 +83,38 @@ public static class AvevaTools
             "create_rectangular_extrusion",
             new { path, startX, startY, startZ, endX, endY, endZ, width, height, updateExisting },
             cancellationToken);
+
+    [McpServerTool, Description("Create and place BOX, NBOX, CYLINDER, or CTORUS with orthogonal local X/Y axes in owner coordinates. Position is the primitive centre, or arc centre for CTORUS. Lengths use the AVEVA project length unit. BOX/NBOX require xLength/yLength/zLength; CYLINDER requires equal xLength/yLength diameters and zLength axial length; CTORUS instead requires insideRadius/outsideRadius/sweepAngle (degrees), with its arc in local XY. NBOX must be owned by the positive primitive it cuts. Does not save; removes the new element if setup fails.")]
+    public static Task<string> create_primitive(
+        [Description("Full parent path. For NBOX, use the host positive primitive, not a sibling structure.")] string parentPath,
+        [Description("Full name of the new primitive. Existing names are never overwritten.")] string name,
+        [Description("BOX, NBOX, CYLINDER, or CTORUS.")] string elementType,
+        [Description("Centre X in owner coordinates.")] double x,
+        [Description("Centre Y in owner coordinates.")] double y,
+        [Description("Centre Z in owner coordinates.")] double z,
+        [Description("Required local X length, or cylinder diameter. Omit for CTORUS.")] double? xLength = null,
+        [Description("Required local Y length, or cylinder diameter. Omit for CTORUS.")] double? yLength = null,
+        [Description("Required local Z length, or cylinder axial length. Omit for CTORUS.")] double? zLength = null,
+        [Description("Local X axis direction X component in owner coordinates.")] double axisXX = 1,
+        [Description("Local X axis direction Y component in owner coordinates.")] double axisXY = 0,
+        [Description("Local X axis direction Z component in owner coordinates.")] double axisXZ = 0,
+        [Description("Local Y axis direction X component in owner coordinates.")] double axisYX = 0,
+        [Description("Local Y axis direction Y component in owner coordinates.")] double axisYY = 1,
+        [Description("Local Y axis direction Z component in owner coordinates.")] double axisYZ = 0,
+        [Description("CTORUS inside radius from arc centre to inner surface; must be positive.")] double? insideRadius = null,
+        [Description("CTORUS outside radius from arc centre to outer surface; greater than insideRadius.")] double? outsideRadius = null,
+        [Description("CTORUS sweep angle in degrees, greater than 0 and at most 360.")] double? sweepAngle = null,
+        CancellationToken cancellationToken = default) =>
+        BridgeClient.CallAsync("create_primitive",
+            new { parentPath, name, elementType, x, y, z, xLength, yLength, zLength,
+                axisXX, axisXY, axisXZ, axisYX, axisYY, axisYZ,
+                insideRadius, outsideRadius, sweepAngle }, cancellationToken);
+
+    [McpServerTool(ReadOnly = true), Description("Read actual position, local X/Y/Z axes and dimensions of BOX, NBOX, CYLINDER, or CTORUS in owner coordinates. CTORUS reports insideRadius, outsideRadius, sweepAngle; others report xLength/yLength/zLength.")]
+    public static Task<string> get_primitive_geometry(
+        [Description("Full primitive path.")] string path,
+        CancellationToken cancellationToken = default) =>
+        BridgeClient.CallAsync("get_primitive_geometry", new { path }, cancellationToken);
 
     [McpServerTool, Description("Delete an element only when confirmPath exactly matches path. This changes active work but does not save it.")]
     public static Task<string> delete_element(
