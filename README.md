@@ -10,6 +10,14 @@ An MCP stdio server that exposes AVEVA Unified Engineering engineering data thro
 
 ## Build
 
+Open `AvevaMcp.sln` in Visual Studio to work with both projects. From a UE customization environment with the AVEVA reference assemblies configured, build the entire solution with:
+
+```powershell
+dotnet build .\AvevaMcp.sln
+```
+
+The projects can also be built individually:
+
 Build the MCP server:
 
 ```powershell

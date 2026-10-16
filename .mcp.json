@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "aveva-unified-engineering": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--no-build",
+        "--project",
+        "src/AvevaMcp.Server/AvevaMcp.Server.csproj"
+      ]
+    }
+  }
+}
