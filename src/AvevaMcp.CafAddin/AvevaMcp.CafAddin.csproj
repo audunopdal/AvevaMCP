@@ -3,6 +3,8 @@
   <Import Condition="Exists('$(VIEW_ROOT)')" Project="$(VIEW_ROOT)\Build\AVEVA_msbuild.props" />
   <PropertyGroup>
     <ReferencePath>$(UNIFIED_ENGINEERING_REFERENCE_PATH)</ReferencePath>
+    <TargetFrameworkProfile />
+    <ProjectGuid>{AA92C41E-8006-4508-BEA8-FA6446F1D7C1}</ProjectGuid>
   </PropertyGroup>
   <PropertyGroup Condition="Exists('$(AVEVA_DESIGN_EXE)')">
     <ReferencePath>$(AVEVA_DESIGN_EXE)</ReferencePath>
@@ -13,7 +15,7 @@
     <OutputType>Library</OutputType>
     <RootNamespace>AvevaMcp.CafAddin</RootNamespace>
     <AssemblyName>AvevaMcp.CafAddin</AssemblyName>
-    <TargetFrameworkVersion>v4.8.1</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <LangVersion>7.3</LangVersion>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <DebugSymbols>true</DebugSymbols>
@@ -26,13 +28,13 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <Reference Include="Aveva.ApplicationFramework">
-      <Private>False</Private>
+      <HintPath>C:\Users\Public\Documents\AVEVA\Unpack\AVEVA.UnifiedEngineering\4100.2606.2414.5053\Aveva.ApplicationFramework.dll</HintPath>
     </Reference>
     <Reference Include="Aveva.Core.Database">
-      <Private>False</Private>
+      <HintPath>C:\Users\Public\Documents\AVEVA\Unpack\AVEVA.UnifiedEngineering\4100.2606.2414.5053\Aveva.Core.Database.dll</HintPath>
     </Reference>
     <Reference Include="Aveva.Core.Geometry">
-      <Private>False</Private>
+      <HintPath>C:\Users\Public\Documents\AVEVA\Unpack\AVEVA.UnifiedEngineering\4100.2606.2414.5053\Aveva.Core.Geometry.dll</HintPath>
     </Reference>
     <Reference Include="System">
       <Private>False</Private>
