@@ -66,6 +66,24 @@ public static class AvevaTools
         CancellationToken cancellationToken = default) =>
         BridgeClient.CallAsync("create_element", new { parentPath, elementType, name }, cancellationToken);
 
+    [McpServerTool, Description("Create rectangular wall geometry in an EXTRUSION: the length-by-width profile is in local XY and HEIG is always the vertical Z-height. Start/end points are the horizontal wall centreline at its base in the owner's coordinate system; dimensions use the AVEVA project length unit. This changes active work but does not save it.")]
+    public static Task<string> create_rectangular_extrusion(
+        [Description("Full path to an existing EXTRUSION element.")] string path,
+        [Description("Start point X coordinate at the wall base.")] double startX,
+        [Description("Start point Y coordinate at the wall base.")] double startY,
+        [Description("Start point Z coordinate at the wall base.")] double startZ,
+        [Description("End point X coordinate at the wall base.")] double endX,
+        [Description("End point Y coordinate at the wall base.")] double endY,
+        [Description("End point Z coordinate at the wall base. Must match startZ for a vertical wall.")] double endZ,
+        [Description("Wall thickness, centered about the start-to-end baseline.")] double width,
+        [Description("Vertical Z-height above the baseline; written to HEIG.")] double height,
+        [Description("Explicitly update an existing four-vertex LOOP; false refuses existing geometry.")] bool updateExisting = false,
+        CancellationToken cancellationToken = default) =>
+        BridgeClient.CallAsync(
+            "create_rectangular_extrusion",
+            new { path, startX, startY, startZ, endX, endY, endZ, width, height, updateExisting },
+            cancellationToken);
+
     [McpServerTool, Description("Delete an element only when confirmPath exactly matches path. This changes active work but does not save it.")]
     public static Task<string> delete_element(
         [Description("Full AVEVA element path to delete. Root elements cannot be deleted.")] string path,

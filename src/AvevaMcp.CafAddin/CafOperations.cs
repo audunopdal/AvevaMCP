@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Aveva.Core.Database;
+using Aveva.Core.Geometry;
 using Newtonsoft.Json.Linq;
 
 namespace AvevaMcp.CafAddin
@@ -45,6 +46,18 @@ namespace AvevaMcp.CafAddin
                         GetElement(RequiredString(parameters, "parentPath")),
                         RequiredString(parameters, "elementType"),
                         RequiredString(parameters, "name"));
+                case "create_rectangular_extrusion":
+                    return CreateRectangularExtrusion(
+                        RequiredString(parameters, "path"),
+                        RequiredDouble(parameters, "startX"),
+                        RequiredDouble(parameters, "startY"),
+                        RequiredDouble(parameters, "startZ"),
+                        RequiredDouble(parameters, "endX"),
+                        RequiredDouble(parameters, "endY"),
+                        RequiredDouble(parameters, "endZ"),
+                        RequiredDouble(parameters, "width"),
+                        RequiredDouble(parameters, "height"),
+                        OptionalBoolean(parameters, "updateExisting"));
                 case "delete_element":
                     return DeleteElement(
                         RequiredString(parameters, "path"),
@@ -254,6 +267,199 @@ namespace AvevaMcp.CafAddin
             return DescribeElement(created);
         }
 
+        private static JObject CreateRectangularExtrusion(
+            string path,
+            double startX,
+            double startY,
+            double startZ,
+            double endX,
+            double endY,
+            double endZ,
+            double width,
+            double height,
+            bool updateExisting)
+        {
+            EnsureFinite(startX, "startX");
+            EnsureFinite(startY, "startY");
+            EnsureFinite(startZ, "startZ");
+            EnsureFinite(endX, "endX");
+            EnsureFinite(endY, "endY");
+            EnsureFinite(endZ, "endZ");
+            EnsureFinite(width, "width");
+            EnsureFinite(height, "height");
+
+            if (width <= 0)
+            {
+                throw new ArgumentOutOfRangeException("width", "Wall width must be greater than zero.");
+            }
+
+            if (height <= 0)
+            {
+                throw new ArgumentOutOfRangeException("height", "Wall height must be greater than zero.");
+            }
+
+            const double coordinateTolerance = 1e-6;
+            if (Math.Abs(endZ - startZ) > coordinateTolerance)
+            {
+                throw new ArgumentException(
+                    "The extrusion operation supports vertical walls only; startZ and endZ must match.");
+            }
+
+            double deltaX = endX - startX;
+            double deltaY = endY - startY;
+            double length = Math.Sqrt(deltaX * deltaX + deltaY * deltaY);
+            EnsureFinite(length, "wall baseline length");
+            if (length <= coordinateTolerance)
+            {
+                throw new ArgumentException("The wall baseline must have a non-zero horizontal length.");
+            }
+
+            DbElement extrusion = GetElement(path);
+            if (!extrusion.GetElementType().Equals(DbElementTypeInstance.EXTRUSION))
+            {
+                throw new ArgumentException("The specified element is not an EXTRUSION: " + path);
+            }
+
+            DbElement[] members = extrusion.Members();
+            DbElement loop = null;
+            DbElement[] vertices = null;
+            Position[] previousVertices = null;
+            if (members.Length != 0)
+            {
+                if (!updateExisting || members.Length != 1 ||
+                    !members[0].GetElementType().Equals(DbElementTypeInstance.LOOP))
+                {
+                    throw new InvalidOperationException(
+                        "Updating geometry requires updateExisting=true and exactly one four-vertex LOOP: " + path);
+                }
+
+                loop = members[0];
+                vertices = loop.Members();
+                if (vertices.Length != 4)
+                {
+                    throw new InvalidOperationException("The existing LOOP must contain exactly four VERTEX elements.");
+                }
+
+                previousVertices = new Position[4];
+                for (int index = 0; index < vertices.Length; index++)
+                {
+                    if (!vertices[index].GetElementType().Equals(DbElementTypeInstance.VERTEX))
+                    {
+                        throw new InvalidOperationException("The existing LOOP contains a non-VERTEX element.");
+                    }
+
+                    previousVertices[index] = vertices[index].GetPosition(DbAttributeInstance.POS);
+                }
+            }
+
+            double directionX = deltaX / length;
+            double directionY = deltaY / length;
+            double originX = startX + directionY * width / 2.0;
+            double originY = startY - directionX * width / 2.0;
+            EnsureFinite(originX, "originX");
+            EnsureFinite(originY, "originY");
+            string loopPath = path.TrimEnd('/') + "/LOOP";
+            Position previousPosition = extrusion.GetPosition(DbAttributeInstance.POS);
+            Orientation previousOrientation = extrusion.GetOrientation(DbAttributeInstance.ORI);
+            double previousHeight = extrusion.GetDouble(DbAttributeInstance.HEIG);
+            bool creatingLoop = loop == null;
+
+            try
+            {
+                if (creatingLoop)
+                {
+                    loop = extrusion.CreateLast(DbElementTypeInstance.LOOP);
+                    loop.SetAttribute(DbAttributeInstance.NAME, loopPath);
+                    vertices = new DbElement[4];
+                    for (int index = 0; index < vertices.Length; index++)
+                    {
+                        vertices[index] = loop.CreateLast(DbElementTypeInstance.VERTEX);
+                        vertices[index].SetAttribute(
+                            DbAttributeInstance.NAME,
+                            loopPath + "/VERTEX" + (index + 1).ToString(CultureInfo.InvariantCulture));
+                    }
+                }
+
+                Position[] profileVertices =
+                {
+                    Position.Create(0, 0, 0),
+                    Position.Create(length, 0, 0),
+                    Position.Create(length, width, 0),
+                    Position.Create(0, width, 0)
+                };
+
+                for (int index = 0; index < profileVertices.Length; index++)
+                {
+                    vertices[index].SetAttribute(DbAttributeInstance.POS, profileVertices[index]);
+                }
+
+                Direction profileX = Direction.Create(
+                    Position.Create(directionX, directionY, 0));
+                Direction profileY = Direction.Create(Position.Create(-directionY, directionX, 0));
+                extrusion.SetAttribute(DbAttributeInstance.POS, Position.Create(originX, originY, startZ));
+                extrusion.SetAttribute(
+                    DbAttributeInstance.ORI,
+                    Orientation.Create(Axis.X, profileX, Axis.Y, profileY));
+                extrusion.SetAttribute(DbAttributeInstance.HEIG, height);
+            }
+            catch (Exception operationError)
+            {
+                try
+                {
+                    if (creatingLoop)
+                    {
+                        if (loop != null && loop.IsValid)
+                        {
+                            loop.Delete();
+                        }
+                    }
+                    else
+                    {
+                        for (int index = 0; index < vertices.Length; index++)
+                        {
+                            vertices[index].SetAttribute(DbAttributeInstance.POS, previousVertices[index]);
+                        }
+                    }
+
+                    extrusion.SetAttribute(DbAttributeInstance.POS, previousPosition);
+                    extrusion.SetAttribute(DbAttributeInstance.ORI, previousOrientation);
+                    extrusion.SetAttribute(DbAttributeInstance.HEIG, previousHeight);
+                }
+                catch (Exception rollbackError)
+                {
+                    throw new AggregateException(
+                        "Geometry creation failed and rollback was incomplete; inspect unsaved work at " + path,
+                        operationError,
+                        rollbackError);
+                }
+
+                throw;
+            }
+
+            return new JObject
+            {
+                ["path"] = path,
+                ["type"] = "EXTRUSION",
+                ["length"] = length,
+                ["width"] = width,
+                ["wallHeight"] = height,
+                ["extrusionHeight"] = extrusion.GetDouble(DbAttributeInstance.HEIG),
+                ["position"] = new JObject
+                {
+                    ["x"] = originX,
+                    ["y"] = originY,
+                    ["z"] = startZ
+                },
+                ["profileVertices"] = new JArray
+                {
+                    new JObject { ["x"] = 0, ["y"] = 0 },
+                    new JObject { ["x"] = length, ["y"] = 0 },
+                    new JObject { ["x"] = length, ["y"] = width },
+                    new JObject { ["x"] = 0, ["y"] = width }
+                }
+            };
+        }
+
         private static JObject DeleteElement(string path, string confirmPath)
         {
             if (!string.Equals(path, confirmPath, StringComparison.Ordinal))
@@ -330,6 +536,44 @@ namespace AvevaMcp.CafAddin
             }
 
             return value.Value<string>();
+        }
+
+        private static bool OptionalBoolean(JObject parameters, string name)
+        {
+            JToken value = parameters[name];
+            if (value == null)
+            {
+                return false;
+            }
+
+            if (value.Type != JTokenType.Boolean)
+            {
+                throw new ArgumentException("A boolean '" + name + "' value is required.");
+            }
+
+            return value.Value<bool>();
+        }
+
+        private static double RequiredDouble(JObject parameters, string name)
+        {
+            JToken value = parameters[name];
+            if (value == null ||
+                (value.Type != JTokenType.Float && value.Type != JTokenType.Integer))
+            {
+                throw new ArgumentException("A numeric '" + name + "' value is required.");
+            }
+
+            double number = value.Value<double>();
+            EnsureFinite(number, name);
+            return number;
+        }
+
+        private static void EnsureFinite(double value, string name)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                throw new ArgumentOutOfRangeException(name, "The value must be finite.");
+            }
         }
 
         private static int ReadLimit(JObject parameters)

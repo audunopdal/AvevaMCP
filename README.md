@@ -74,6 +74,7 @@ The server only connects to the named pipe when a tool is called. Start UE and l
 | `read_attribute` | Read a string, integer, double, or boolean attribute. |
 | `set_attribute` | Set a string, integer, double, or boolean attribute. |
 | `create_element` | Create an element under a parent and assign its full AVEVA name. |
+| `create_rectangular_extrusion` | Build a length-by-width XY profile and extrude vertically, with `HEIG` equal to wall Z-height. Set `updateExisting=true` to update an existing four-vertex LOOP. |
 | `delete_element` | Delete an element only when `confirmPath` exactly matches its path. |
 | `save_work` | Explicitly save current MDB work with a comment. |
 | `discard_work` | Explicitly discard current MDB work; requires `DISCARD_CURRENT_WORK`. |
@@ -84,7 +85,7 @@ Changes are not automatically saved. Review edits in UE and call `save_work` exp
 
 - A compatible UE session with the add-in loaded is required; the pipe is not a REST service and does not work when UE is closed.
 - CAF operations are performed on UE's application synchronization context. Calls fail clearly if the add-in cannot capture that context.
-- Attribute access supports string, integer, double, and boolean values. Geometry, references, rules, transactions, and other CAF attribute types are not yet exposed.
+- General geometry, references, rules, transactions, and other CAF attribute types are not exposed. `create_rectangular_extrusion` supports vertical rectangular walls with a horizontal baseline in the owner's coordinates. The profile is length by thickness in local XY; local Z points up in the owner's coordinates, and `HEIG` is the wall height, not its baseline length. Coordinates and dimensions must already be converted to the AVEVA project length unit. Existing geometry is refused unless `updateExisting=true`, and updates require exactly one four-vertex LOOP. Failed writes attempt to restore the previous geometry and report rollback failures explicitly. Openings, curved walls, and sloping walls are not supported.
 - No operation silently substitutes a mock result when UE is unavailable.
 
 ## References

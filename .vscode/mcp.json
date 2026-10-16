@@ -4,16 +4,9 @@
       "type": "stdio",
       "command": "dotnet",
       "args": [
-        "run",
-        "--no-build",
-        "--project",
-        "${workspaceFolder}/src/AvevaMcp.Server/AvevaMcp.Server.csproj"
+        "${workspaceFolder}/src/AvevaMcp.Server/bin/Debug/net8.0/AvevaMcp.Server.dll"
       ]
-    }
-  }
-}
-{
-  "servers": {
+    },
     "revit": {
       "type": "stdio",
       "command": "dotnet",
