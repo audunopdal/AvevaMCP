@@ -64,6 +64,11 @@ The server only connects to the named pipe when a tool is called. Start UE and l
 
 ## Tools
 
+For implementing POHE/POLYHE mesh import, use the
+[AVEVA polyhedron import skill](.github/skills/aveva-polyhedron-import/SKILL.md).
+It records the managed database creation patterns found in ImportPlant and the
+validation needed when adapting them to UE 4.1; it does not add a mesh MCP tool.
+
 | Tool | Purpose |
 | --- | --- |
 | `get_context` | Get the current project, user, and MDB names. |
@@ -76,12 +81,81 @@ The server only connects to the named pipe when a tool is called. Start UE and l
 | `create_element` | Create an element under a parent and assign its full AVEVA name. |
 | `create_rectangular_extrusion` | Build a length-by-width XY profile and extrude vertically, with `HEIG` equal to wall Z-height. Set `updateExisting=true` to update an existing four-vertex LOOP. |
 | `create_primitive` | Create a positioned and oriented BOX, NBOX, CYLINDER, or CTORUS, returning actual geometry read-back. |
+| `create_polyhe` | Create a closed triangular POLYHEDRON, automatically falling back to POHEDRON/POGO if POLYHE creation fails. |
 | `get_primitive_geometry` | Read a primitive's centre, local axes, and dimensions in owner coordinates. |
 | `delete_element` | Delete an element only when `confirmPath` exactly matches its path. |
 | `save_work` | Explicitly save current MDB work with a comment. |
 | `discard_work` | Explicitly discard current MDB work; requires `DISCARD_CURRENT_WORK`. |
 
 Changes are not automatically saved. Review edits in UE and call `save_work` explicitly. `discard_work` discards all unsaved changes in the current MDB, not only changes made through MCP.
+
+### Creating a POLYHE mesh
+
+`create_polyhe(parentPath, name, vertices, faces)` first attempts a named POLYHEDRON
+under an existing legal owner such as EQUIPMENT, with automatic POHE fallback.
+Create the EQUIPMENT under the
+target ZONE first if required by database ownership rules. Existing names are
+never overwritten.
+
+Vertices are `[x,y,z]` arrays in the **parent's coordinate system**, using the
+same AVEVA project length units as `create_primitive`. Faces are arrays of three
+zero-based vertex indices, and every vertex must be used. Shared positions
+should use shared vertex indices for closed POLYHE detection; POHE stores its
+own point for each face corner. Limits are 3-10,000 vertices and 1-20,000 faces.
+
+Example tetrahedron (100 project length units on each axis):
+
+```json
+{
+  "parentPath": "/MESH-EQUIPMENT",
+  "name": "/MESH-TETRAHEDRON",
+  "vertices": [[0,0,0], [100,0,0], [0,100,0], [0,0,100]],
+  "faces": [[0,2,1], [0,1,3], [0,3,2], [1,2,3]]
+}
+```
+
+The created structure is `POLYHEDRON -> POLPTLIST -> POINT` plus
+`POLFACE -> POLOOP -> LOOPTS` per triangle, referencing the shared points through
+`VXREF`. The polyhedron is positioned at the first vertex with owner-aligned
+axes; its points are stored relative to that origin. For Revit data, add the
+exporter's shared origin and convert units/world coordinates into the parent's
+frame **before** calling. No world-coordinate or unit conversion is inferred.
+
+Preflight checks reject malformed, degenerate triangles and unused vertices.
+They do not establish that arbitrary input is free of self-intersections. A
+closed mesh with each edge shared exactly twice in opposite directions and
+positive signed volume is attempted as POLYHE. Open, non-manifold, inward-wound,
+or zero-volume surfaces go directly to POHE without inventing caps. After
+POLYHE creation, AVEVA's completed `GVOL` must be finite and positive. If
+POLYHE ownership, creation, setup or volume
+validation fails, the command deletes any newly created POLYHE before trying
+`POHEDRON -> POGON -> POINT` with the same name, placement and ordered triangles.
+POHE stores three separate points per triangle and does not require a positive
+database `GVOL`; its creation is not certification of a valid solid.
+
+Malformed triangles and duplicate-name errors do not trigger fallback; open
+triangular surfaces are preserved as POHE faces. A parent must legally
+own the selected representation. If cleanup fails, fallback is aborted and the
+affected name is explicitly reported. Failed POHE setup is also cleaned up;
+if both attempts fail, both errors are reported. There is no automatic save.
+
+The response includes `path`, `type`, `parentPath`, vertex/face counts, input
+coordinate/length units, `inputVolume` in project length units cubed, measured
+`volume` with AVEVA's reported `volumeUnits`, and `saved: false`.
+`fallbackUsed` and `fallbackReason` explicitly report the outcome, and `type`
+is the actual created database type. On POHE fallback, measured `volume` and
+`volumeUnits` are null (not verified); `pointCount` is three times `faceCount`.
+`vertexCount` always reports the input vertex count.
+
+Run the dependency-free mesh validation checks with:
+
+```powershell
+dotnet run --project .\tests\AvevaMcp.Geometry.Tests\AvevaMcp.Geometry.Tests.csproj
+```
+
+These checks do not replace live UE verification of ownership, point placement,
+`VXREF`, volume and visible geometry. Rebuild/reload the CAF add-in and restart
+the MCP server before using the new tool.
 
 ### Placing door primitives
 
