@@ -7,7 +7,7 @@ using Newtonsoft.Json.Linq;
 
 namespace AvevaMcp.CafAddin
 {
-    internal static class CafOperations
+    internal static partial class CafOperations
     {
         private const int MaximumResults = 500;
 
@@ -60,6 +60,10 @@ namespace AvevaMcp.CafAddin
                         OptionalBoolean(parameters, "updateExisting"));
                 case "create_primitive":
                     return CreatePrimitive(parameters);
+                case "create_polyhe":
+                    return CreatePolyhe(parameters);
+                case "import_revit_mesh":
+                    return ImportRevitMesh(parameters);
                 case "get_primitive_geometry":
                     return DescribePrimitive(GetElement(RequiredString(parameters, "path")));
                 case "delete_element":
@@ -599,6 +603,247 @@ namespace AvevaMcp.CafAddin
 
                 throw;
             }
+        }
+
+        private static JObject CreatePolyhe(JObject parameters)
+        {
+            string parentPath = RequiredString(parameters, "parentPath");
+            string name = RequiredString(parameters, "name");
+            if (!name.StartsWith("/", StringComparison.Ordinal) || name.Length < 2)
+            {
+                throw new ArgumentException("name must be a full AVEVA element name beginning with /.");
+            }
+
+            JArray vertexRows = RequiredMeshArray(parameters, "vertices", 3, PolyhedronMesh.MaximumVertices);
+            JArray faceRows = RequiredMeshArray(parameters, "faces", 1, PolyhedronMesh.MaximumFaces);
+            var vertices = new double[vertexRows.Count][];
+            var faces = new int[faceRows.Count][];
+            for (int row = 0; row < vertices.Length; row++)
+            {
+                JArray coordinates = vertexRows[row] as JArray;
+                if (coordinates == null || coordinates.Count != 3)
+                {
+                    throw new ArgumentException("Each vertex must be an [x,y,z] array.");
+                }
+
+                vertices[row] = new double[3];
+                for (int axis = 0; axis < 3; axis++)
+                {
+                    JToken coordinate = coordinates[axis];
+                    if (coordinate.Type != JTokenType.Float && coordinate.Type != JTokenType.Integer)
+                    {
+                        throw new ArgumentException("Vertex coordinates must be numeric.");
+                    }
+
+                    vertices[row][axis] = coordinate.Value<double>();
+                }
+            }
+
+            for (int row = 0; row < faces.Length; row++)
+            {
+                JArray indices = faceRows[row] as JArray;
+                if (indices == null || indices.Count != 3)
+                {
+                    throw new ArgumentException("Each face must contain three zero-based integer indices.");
+                }
+
+                faces[row] = new int[3];
+                for (int index = 0; index < 3; index++)
+                {
+                    if (indices[index].Type != JTokenType.Integer ||
+                        indices[index].Value<double>() < 0 ||
+                        indices[index].Value<double>() >= vertices.Length)
+                    {
+                        throw new ArgumentException("Face indices must be integers within the vertex array.");
+                    }
+
+                    faces[row][index] = indices[index].Value<int>();
+                }
+            }
+
+            return CreateMesh(GetElement(parentPath), parentPath, name, vertices, faces);
+        }
+
+        private static JObject CreateMesh(DbElement parent, string parentPath, string name, double[][] vertices, int[][] faces)
+        {
+            PolyhedronMesh.ValidateSurface(vertices, faces);
+            if (DbElement.GetElement(name).IsValid)
+            {
+                throw new InvalidOperationException("An element already exists at " + name);
+            }
+
+            double[] origin = vertices[0];
+            double inputVolume;
+            string fallbackReason;
+            if (!PolyhedronMesh.TryValidateClosed(vertices, faces, out inputVolume, out fallbackReason))
+            {
+                return CreatePoheFallback(parent, parentPath, name, vertices, faces, null, fallbackReason);
+            }
+
+            DbElement created = null;
+            try
+            {
+                if (!parent.IsCreatable(DbElementTypeInstance.POLYHEDRON))
+                {
+                    throw new InvalidOperationException("This parent cannot own a POLYHEDRON.");
+                }
+
+                DbAttribute vertexReferences = GetAttribute("VXREF");
+                DbAttribute volumeAttribute = GetAttribute("GVOL");
+                created = parent.CreateLast(DbElementTypeInstance.POLYHEDRON);
+                PlaceMesh(created, name, origin);
+                DbElement pointList = created.CreateLast(DbElementTypeInstance.POLPTLIST);
+                var points = new DbElement[vertices.Length];
+                for (int index = 0; index < vertices.Length; index++)
+                {
+                    double[] vertex = vertices[index];
+                    points[index] = pointList.CreateLast(DbElementTypeInstance.POINT);
+                    points[index].SetAttribute(DbAttributeInstance.POS, Position.Create(
+                        vertex[0] - origin[0], vertex[1] - origin[1], vertex[2] - origin[2]));
+                }
+
+                foreach (int[] face in faces)
+                {
+                    DbElement polygon = created.CreateLast(DbElementTypeInstance.POLFACE);
+                    DbElement loop = polygon.CreateLast(DbElementTypeInstance.POLOOP);
+                    DbElement loopPoints = loop.CreateLast(DbElementTypeInstance.LOOPTS);
+                    loopPoints.SetAttribute(vertexReferences, new[] { points[face[0]], points[face[1]], points[face[2]] });
+                }
+
+                DbDouble measuredVolume = created.GetDbDouble(volumeAttribute);
+                double volume = measuredVolume.Value;
+                EnsureFinite(volume, "GVOL");
+                if (volume <= 0)
+                {
+                    throw new InvalidOperationException("AVEVA rejected the completed POLYHEDRON: GVOL must be positive.");
+                }
+
+                JObject result = DescribeMesh(created, parentPath, vertices.Length, faces.Length, inputVolume);
+                result["fallbackUsed"] = false;
+                result["fallbackReason"] = JValue.CreateNull();
+                result["volume"] = volume;
+                result["volumeUnits"] = measuredVolume.Units.ToString();
+                return result;
+            }
+            catch (Exception operationError)
+            {
+                try
+                {
+                    if (created != null)
+                    {
+                        created.Delete();
+                    }
+                }
+                catch (Exception rollbackError)
+                {
+                    throw new AggregateException(
+                        "POLYHEDRON setup failed and cleanup was incomplete; inspect unsaved work at " + name,
+                        operationError, rollbackError);
+                }
+
+                try
+                {
+                    return CreatePoheFallback(parent, parentPath, name, vertices, faces, inputVolume, operationError.Message);
+                }
+                catch (Exception fallbackError)
+                {
+                    throw new AggregateException(
+                        "POLYHEDRON creation and POHE fallback both failed at " + name,
+                        operationError, fallbackError);
+                }
+            }
+        }
+
+        private static JObject CreatePoheFallback(
+            DbElement parent, string parentPath, string name, double[][] vertices,
+            int[][] faces, double? inputVolume, string polyheError)
+        {
+            if (!parent.IsCreatable(DbElementTypeInstance.POHEDRON))
+            {
+                throw new InvalidOperationException("This parent cannot own a POHEDRON fallback.");
+            }
+
+            if (DbElement.GetElement(name).IsValid)
+            {
+                throw new InvalidOperationException("POHE fallback refuses to overwrite an element at " + name);
+            }
+
+            DbElement created = parent.CreateLast(DbElementTypeInstance.POHEDRON);
+            try
+            {
+                double[] origin = vertices[0];
+                PlaceMesh(created, name, origin);
+                foreach (int[] face in faces)
+                {
+                    DbElement polygon = created.CreateLast(DbElementTypeInstance.POGON);
+                    foreach (int index in face)
+                    {
+                        double[] vertex = vertices[index];
+                        DbElement point = polygon.CreateLast(DbElementTypeInstance.POINT);
+                        point.SetAttribute(DbAttributeInstance.POS, Position.Create(
+                            vertex[0] - origin[0], vertex[1] - origin[1], vertex[2] - origin[2]));
+                    }
+                }
+
+                JObject result = DescribeMesh(created, parentPath, vertices.Length, faces.Length, inputVolume);
+                result["fallbackUsed"] = true;
+                result["fallbackReason"] = polyheError;
+                result["pointCount"] = faces.Length * 3;
+                result["volume"] = JValue.CreateNull();
+                result["volumeUnits"] = JValue.CreateNull();
+                return result;
+            }
+            catch (Exception operationError)
+            {
+                try
+                {
+                    created.Delete();
+                }
+                catch (Exception rollbackError)
+                {
+                    throw new AggregateException(
+                        "POHE fallback failed and cleanup was incomplete; inspect unsaved work at " + name,
+                        operationError, rollbackError);
+                }
+
+                throw;
+            }
+        }
+
+        private static void PlaceMesh(DbElement element, string name, double[] origin)
+        {
+            element.SetAttribute(DbAttributeInstance.NAME, name);
+            element.SetAttribute(DbAttributeInstance.POS, Position.Create(origin[0], origin[1], origin[2]));
+            element.SetAttribute(DbAttributeInstance.ORI, Orientation.Create(
+                Axis.X, Direction.Create(Position.Create(1, 0, 0)),
+                Axis.Y, Direction.Create(Position.Create(0, 1, 0))));
+        }
+
+        private static JObject DescribeMesh(
+            DbElement element, string parentPath, int vertexCount, int faceCount, double? inputVolume)
+        {
+            JObject result = DescribeElement(element);
+            result["parentPath"] = parentPath;
+            result["vertexCount"] = vertexCount;
+            result["faceCount"] = faceCount;
+            result["pointCount"] = vertexCount;
+            result["coordinateSystem"] = "owner";
+            result["lengthUnits"] = "AVEVA project length unit";
+            result["inputVolume"] = inputVolume;
+            result["inputVolumeUnits"] = "AVEVA project length unit cubed";
+            result["saved"] = false;
+            return result;
+        }
+
+        private static JArray RequiredMeshArray(JObject parameters, string name, int minimum, int maximum)
+        {
+            JArray values = parameters[name] as JArray;
+            if (values == null || values.Count < minimum || values.Count > maximum)
+            {
+                throw new ArgumentException(name + " must be an array with " + minimum + "-" + maximum + " entries.");
+            }
+
+            return values;
         }
 
         private static double[] ReadUnitAxis(JObject parameters, string prefix, double[] defaults)

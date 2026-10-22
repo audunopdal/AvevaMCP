@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace AvevaMcp.Server;
@@ -109,6 +110,66 @@ public static class AvevaTools
             new { parentPath, name, elementType, x, y, z, xLength, yLength, zLength,
                 axisXX, axisXY, axisXZ, axisYX, axisYY, axisYZ,
                 insideRadius, outsideRadius, sweepAngle }, cancellationToken);
+
+    [McpServerTool, Description("Create a closed triangular POLYHEDRON mesh, automatically falling back to POHEDRON/POGO if UE rejects POLYHE creation or volume. Reports actual type, fallbackUsed and fallbackReason. Coordinates are in the parent's frame and AVEVA project length units. Requires outward, consistently wound closed faces, even for fallback. No overwrite. Cleans up failed geometry before fallback; aborts if cleanup fails. Leaves changes unsaved.")]
+    public static Task<string> create_polyhe(
+        [Description("Existing legal POLYHEDRON or POHEDRON owner, such as EQUIPMENT. A ZONE may require an EQUIPMENT child first.")] string parentPath,
+        [Description("Unique full name beginning with /.")] string name,
+        [Description("3-10000 vertices, each an [x,y,z] array in parent coordinates. Add any Revit shared origin and convert units/coordinates before calling.")] double[][] vertices,
+        [Description("1-20000 triangular faces, each containing three zero-based vertex indices. Every vertex must be used. Closed, outward-wound meshes use POLYHE; valid open/non-manifold surfaces use POHE.")] int[][] faces,
+        CancellationToken cancellationToken = default) =>
+        BridgeClient.CallAsync("create_polyhe", new { parentPath, name, vertices, faces }, cancellationToken);
+
+    [McpServerTool, Description("Import a Revit element's mesh into UE. Reads all get_element_mesh pages directly from the local RevitMCP add-in (Revit must be running with a model open), reconstructs shared coordinates (originShared + relative, mm), welds vertices, and treats Revit shared E/N/Elev as UE world X/Y/Z, converting into the ZONE's frame. Creates a new EQUIPMENT under zonePath, positioned at the first vertex, owning a POLYHEDRON for closed outward meshes or a POHEDRON surface otherwise. Verifies the mesh world position. No overwrite; removes the new EQUIPMENT on failure. Leaves changes unsaved.")]
+    public static async Task<string> import_revit_mesh(
+        [Description("Positive 64-bit Revit element ID with mesh_fallback status.")] long revitElementId,
+        [Description("Existing ZONE path that will own the new EQUIPMENT.")] string zonePath,
+        [Description("Full name for the new EQUIPMENT. Defaults to /REVIT-<revitElementId>.")] string? equipmentName = null,
+        [Description("Full name for the mesh element. Defaults to <equipmentName>-MESH.")] string? meshName = null,
+        [Description("Vertex weld tolerance in mm, greater than 0 and at most 10.")] double weldTolerance = 0.1,
+        [Description("Revit PID; only needed when several Revit processes are running.")] int? revitProcessId = null,
+        CancellationToken cancellationToken = default)
+    {
+        equipmentName ??= $"/REVIT-{revitElementId}";
+        meshName ??= equipmentName + "-MESH";
+        try
+        {
+            return await ImportRevitMeshCore(revitElementId, zonePath, equipmentName, meshName, weldTolerance,
+                revitProcessId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not McpException)
+        {
+            throw new McpException(exception.Message, exception);
+        }
+    }
+
+    private static async Task<string> ImportRevitMeshCore(long revitElementId, string zonePath, string equipmentName,
+        string meshName, double weldTolerance, int? revitProcessId, CancellationToken cancellationToken)
+    {
+        RevitMesh mesh = await RevitMeshSource.ReadAsync(revitElementId, revitProcessId, cancellationToken);
+        var source = new
+        {
+            revitElementId = mesh.ElementId,
+            uniqueId = mesh.UniqueId,
+            name = mesh.Name,
+            category = mesh.Category,
+            originShared = mesh.OriginShared,
+            materialCount = mesh.MaterialCount
+        };
+        string description = $"Revit {mesh.ElementId} {mesh.Name} ({mesh.UniqueId})";
+        if (description.Length > 120)
+            description = description[..120];
+        return await BridgeClient.CallAsync("import_revit_mesh", new
+        {
+            zonePath,
+            equipmentName,
+            meshName,
+            weldTolerance,
+            triangles = mesh.Triangles,
+            description,
+            source
+        }, cancellationToken);
+    }
 
     [McpServerTool(ReadOnly = true), Description("Read actual position, local X/Y/Z axes and dimensions of BOX, NBOX, CYLINDER, or CTORUS in owner coordinates. CTORUS reports insideRadius, outsideRadius, sweepAngle; others report xLength/yLength/zLength.")]
     public static Task<string> get_primitive_geometry(

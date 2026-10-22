@@ -66,6 +66,8 @@
     <Compile Include="McpBridgeAddin.cs" />
     <Compile Include="PipeBridgeHost.cs" />
     <Compile Include="CafOperations.cs" />
+    <Compile Include="CafOperations.RevitImport.cs" />
+    <Compile Include="PolyhedronMesh.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>

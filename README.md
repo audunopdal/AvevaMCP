@@ -82,6 +82,7 @@ validation needed when adapting them to UE 4.1; it does not add a mesh MCP tool.
 | `create_rectangular_extrusion` | Build a length-by-width XY profile and extrude vertically, with `HEIG` equal to wall Z-height. Set `updateExisting=true` to update an existing four-vertex LOOP. |
 | `create_primitive` | Create a positioned and oriented BOX, NBOX, CYLINDER, or CTORUS, returning actual geometry read-back. |
 | `create_polyhe` | Create a closed triangular POLYHEDRON, automatically falling back to POHEDRON/POGO if POLYHE creation fails. |
+| `import_revit_mesh` | Read a Revit element mesh directly from the RevitMCP add-in and create it under a new EQUIPMENT in a ZONE, in world-aligned coordinates. |
 | `get_primitive_geometry` | Read a primitive's centre, local axes, and dimensions in owner coordinates. |
 | `delete_element` | Delete an element only when `confirmPath` exactly matches its path. |
 | `save_work` | Explicitly save current MDB work with a comment. |
@@ -156,6 +157,37 @@ dotnet run --project .\tests\AvevaMcp.Geometry.Tests\AvevaMcp.Geometry.Tests.csp
 These checks do not replace live UE verification of ownership, point placement,
 `VXREF`, volume and visible geometry. Rebuild/reload the CAF add-in and restart
 the MCP server before using the new tool.
+
+### Importing a Revit mesh
+
+`import_revit_mesh(revitElementId, zonePath, equipmentName?, meshName?, weldTolerance=0.1, revitProcessId?)`
+moves a whole Revit element mesh into UE in one call. The MCP server reads every
+`get_element_mesh` page directly from the local RevitMCP add-in pipe
+(`RevitMCP-2026-<pid>`), so
+triangles never pass through the chat agent. Revit 2026 must be running with the
+RevitMCP add-in loaded and the model open; specify `revitProcessId` only when
+several Revit processes run. Only `mesh_fallback` elements with at most 20000
+triangles are accepted.
+
+- Coordinates: `originShared + relative vertex` in mm. Revit shared
+  East/North/Elevation is treated as UE world X/Y/Z in database millimetres, then
+  transformed into the ZONE's frame using its `WORPOS`/`WORI` (or `POS`/`ORI` WRT world).
+- Topology: corners are welded on a `weldTolerance` mm grid; degenerate and
+  duplicate (including back-to-back) triangles are dropped and counted.
+- Ownership: a new EQUIPMENT (default `/REVIT-<id>`, `DESC` set to the Revit ID,
+  name and unique ID) is created under the ZONE at the first vertex with
+  identity orientation. The mesh (default `<equipmentName>-MESH`) is created
+  with the `create_polyhe` rules: POLYHEDRON for closed outward meshes, otherwise
+  POHEDRON.
+- Verification: the mesh world position must match the expected shared position within
+  `max(1 mm, 10 × weldTolerance)`, otherwise the import is rolled back. A vertex
+  world-position check is reported as `verification.pointDeviation`.
+- Existing names are refused; any failure deletes the new EQUIPMENT. Changes are
+  left unsaved.
+
+The response extends the `create_polyhe` result with `equipmentPath`,
+`zonePath`, `coordinateMapping`, `sourceTriangleCount`, dropped-triangle counts,
+`firstVertexWorld`, `verification`, and Revit `source` metadata.
 
 ### Placing door primitives
 
