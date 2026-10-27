@@ -4,7 +4,7 @@
       "type": "stdio",
       "command": "dotnet",
       "args": [
-        "${workspaceFolder}/src/AvevaMcp.Server/bin/Debug/net8.0/AvevaMcp.Server.dll"
+        "D:\\Repos\\AvevaMCP\\src\\AvevaMcp.Server\\bin\\Debug\\net8.0\\AvevaMcp.Server.dll"
       ]
     },
     "revit": {
